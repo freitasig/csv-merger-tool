@@ -1,3 +1,4 @@
+/* --- Estilos base fornecidos pelo usuário --- */
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     display: flex;
@@ -12,8 +13,8 @@ body {
 main {
     background-color: white;
     padding: 2rem 3rem;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-radius: 12px; /* Aumentado para um toque mais suave */
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15); /* Sombra mais profunda */
     text-align: center;
     max-width: 600px;
     width: 90%;
@@ -34,31 +35,89 @@ p {
 input[type="file"] {
     display: block;
     margin: 0 auto 1.5rem auto;
-    border: 1px solid #ddd;
+    border: 1px solid #cdd0d5; /* Borda mais suave */
     padding: 10px;
-    border-radius: 6px;
+    border-radius: 8px;
     width: 100%;
+    cursor: pointer;
+    background-color: #f9f9f9;
 }
 
+input[type="file"]:focus {
+    border-color: #1877f2;
+    box-shadow: 0 0 0 2px rgba(24, 119, 242, 0.2);
+    outline: none;
+}
+
+/* --- Melhoria do Botão --- */
 button {
     background-color: #1877f2;
     color: white;
     border: none;
-    padding: 12px 24px;
-    border-radius: 6px;
-    font-size: 1rem;
-    font-weight: bold;
+    padding: 14px 24px; /* Aumentei o padding */
+    border-radius: 8px; /* Aumentei o border-radius */
+    font-size: 1.05rem;
+    font-weight: 600; /* Levemente mais bold */
     cursor: pointer;
-    transition: background-color 0.3s;
+    transition: background-color 0.3s, opacity 0.3s;
     width: 100%;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 button:hover {
     background-color: #166fe5;
 }
 
+/* Estilo para o botão quando desabilitado (crucial para UX) */
+button:disabled {
+    background-color: #aeb4be; /* Cor cinza/neutra */
+    cursor: not-allowed;
+    opacity: 0.7;
+    box-shadow: none;
+}
+
+/* --- Estilos de feedback com Classes --- */
+
 #status {
     margin-top: 1.5rem;
-    font-size: 0.9rem;
+    font-size: 0.95rem;
+    padding: 12px;
+    border-radius: 8px;
     min-height: 20px;
+    font-weight: 500;
+    text-align: left;
+    transition: all 0.3s ease;
+    border: 1px solid transparent; /* Borda invisível por padrão */
+    background-color: transparent;
+    color: #333;
+}
+
+/* Status de Sucesso (verde) */
+.status-success {
+    background-color: #d4edda;
+    color: #155724;
+    border-color: #c3e6cb;
+    font-weight: bold;
+}
+
+/* Status de Erro (vermelho) */
+.status-error {
+    background-color: #f8d7da;
+    color: #721c24;
+    border-color: #f5c6cb;
+    font-weight: bold;
+}
+
+/* Status de Aviso/Orange */
+.status-orange {
+    background-color: #fff3cd;
+    color: #856404;
+    border-color: #ffeeba;
+}
+
+/* Status de Processando (azul/neutro) */
+.status-processing {
+    background-color: #e6f7ff; /* Azul claro para indicar atividade */
+    color: #1877f2;
+    border-color: #91d5ff;
 }
