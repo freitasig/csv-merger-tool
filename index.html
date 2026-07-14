@@ -3,21 +3,288 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ferramenta para Unir Arquivos CSV</title>
-    <link rel="stylesheet" href="style.css">
+    <title>CSV Merger Pro - Unir e Processar CSVs</title>
+    <!-- Google Fonts: Outfit and Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- PapaParse for high-performance CSV processing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <!-- SheetJS for native Excel (.xlsx) export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="style.css">
 </head>
-<body>
-    <main>
-        <h1>Ferramenta para Unir Arquivos CSV</h1>
-        <p>Selecione dois ou mais arquivos CSV. A ferramenta manterá o cabeçalho do primeiro arquivo e unirá os dados dos demais.</p>
-        
-        <input type="file" id="csv-files" multiple accept=".csv">
-        
-        <button id="merge-button">Unir e Baixar Arquivos</button>
-        
-        <div id="status"></div>
-    </main>
+<body class="dark-theme">
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="logo-area">
+                <div class="logo-icon">
+                    <i data-lucide="merge"></i>
+                </div>
+                <div>
+                    <h1>CSV Merger <span class="badge-pro">PRO</span></h1>
+                    <p>Una, filtre e formate seus arquivos CSV/Excel no seu navegador com total privacidade.</p>
+                </div>
+            </div>
+            <button id="theme-toggle" class="btn-icon" title="Alternar tema">
+                <i data-lucide="sun" class="sun-icon"></i>
+                <i data-lucide="moon" class="moon-icon"></i>
+            </button>
+        </header>
+
+        <!-- Main Workspace -->
+        <main class="workspace-grid">
+            <!-- Left Panel: Files and Dropzone -->
+            <section class="workspace-panel panel-left">
+                <div class="card">
+                    <div class="card-header">
+                        <i data-lucide="files" class="card-icon"></i>
+                        <h2>Arquivos CSV</h2>
+                    </div>
+                    
+                    <!-- Drag and Drop Area -->
+                    <div id="dropzone" class="dropzone">
+                        <input type="file" id="csv-files" multiple accept=".csv" class="file-input">
+                        <div class="dropzone-content">
+                            <i data-lucide="upload-cloud" class="upload-icon"></i>
+                            <h3>Arraste seus arquivos CSV aqui</h3>
+                            <p>ou <span class="highlight">procure nos seus arquivos</span></p>
+                            <span class="file-limits">Suporta múltiplos arquivos CSV</span>
+                        </div>
+                    </div>
+
+                    <!-- Selected Files List -->
+                    <div class="files-list-container">
+                        <h3>Arquivos Selecionados (<span id="file-count">0</span>)</h3>
+                        <div id="empty-state-files" class="empty-state">
+                            <i data-lucide="file-warning"></i>
+                            <p>Nenhum arquivo selecionado.</p>
+                        </div>
+                        <ul id="files-list" class="files-list">
+                            <!-- Dynamically populated via JS -->
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Panel: Configurations & Actions -->
+            <section class="workspace-panel panel-right">
+                <!-- Settings Card with Tabs -->
+                <div class="card">
+                    <div class="card-header">
+                        <i data-lucide="settings" class="card-icon"></i>
+                        <h2>Configurações do Processamento</h2>
+                    </div>
+                    
+                    <!-- Tabs Navigation -->
+                    <div class="tabs-header">
+                        <button class="tab-btn active" data-tab="tab-union">União</button>
+                        <button class="tab-btn" data-tab="tab-mapper">Mapeamento</button>
+                        <button class="tab-btn" data-tab="tab-cleaning">Limpeza</button>
+                        <button class="tab-btn" data-tab="tab-filters">Filtros</button>
+                    </div>
+
+                    <div class="tabs-content">
+                        <!-- Tab 1: Union Options -->
+                        <div class="tab-pane active" id="tab-union">
+                            <!-- Mode Selection -->
+                            <div class="form-group">
+                                <label for="merge-mode">Modo de Alinhamento</label>
+                                <select id="merge-mode">
+                                    <option value="smart" selected>Alinhamento Inteligente (Por Nome de Coluna)</option>
+                                    <option value="simple">Alinhamento Simples (Por Posição/Índice)</option>
+                                </select>
+                                <small class="help-text">O modo inteligente mapeia colunas iguais mesmo em ordens diferentes.</small>
+                            </div>
+
+                            <!-- Column Strategy (Only for smart mode) -->
+                            <div class="form-group" id="strategy-group">
+                                <label for="column-strategy">Estratégia de Colunas</label>
+                                <select id="column-strategy">
+                                    <option value="union" selected>União (Manter todas as colunas de todos os arquivos)</option>
+                                    <option value="intersection">Interseção (Manter apenas colunas comuns a todos)</option>
+                                </select>
+                            </div>
+
+                            <div class="settings-row">
+                                <!-- Encoding -->
+                                <div class="form-group">
+                                    <label for="input-encoding">Codificação de Entrada</label>
+                                    <select id="input-encoding">
+                                        <option value="UTF-8" selected>UTF-8</option>
+                                        <option value="ISO-8859-1">ISO-8859-1 (Latin-1 / Excel Br)</option>
+                                    </select>
+                                </div>
+
+                                <!-- Input Delimiter -->
+                                <div class="form-group">
+                                    <label for="input-delimiter">Delimitador de Entrada</label>
+                                    <select id="input-delimiter">
+                                        <option value="auto" selected>Detectar Automático</option>
+                                        <option value=",">Vírgula (,)</option>
+                                        <option value=";">Ponto e Vírgula (;)</option>
+                                        <option value="&#9;">Tabulação (\t)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="settings-row">
+                                <!-- Output Delimiter -->
+                                <div class="form-group">
+                                    <label for="output-delimiter">Delimitador de Saída</label>
+                                    <select id="output-delimiter">
+                                        <option value="," selected>Vírgula (,)</option>
+                                        <option value=";">Ponto e Vírgula (;)</option>
+                                        <option value="&#9;">Tabulação (\t)</option>
+                                    </select>
+                                </div>
+
+                                <!-- Output Filename -->
+                                <div class="form-group">
+                                    <label for="output-filename">Nome do Arquivo de Saída</label>
+                                    <input type="text" id="output-filename" value="arquivos_unidos.csv" placeholder="resultado.csv">
+                                </div>
+                            </div>
+
+                            <!-- Additional Options -->
+                            <div class="checkbox-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="opt-source-col" checked>
+                                    <span>Adicionar coluna com nome do arquivo de origem</span>
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="opt-dedup">
+                                    <span>Remover linhas de dados duplicadas</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Tab 2: Visual Column Mapper -->
+                        <div class="tab-pane" id="tab-mapper">
+                            <div class="form-group">
+                                <label>Mapear / Renomear Colunas</label>
+                                <p class="help-text">Altere o nome das colunas abaixo. Colunas renomeadas para o mesmo nome serão unidas automaticamente.</p>
+                                <div id="column-mapper-container" class="mapper-table-container">
+                                    <!-- Populated via JS -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab 3: Data Cleaning -->
+                        <div class="tab-pane" id="tab-cleaning">
+                            <!-- Decimal Settings -->
+                            <div class="form-group">
+                                <label for="clean-decimal">Padronizar Separador Decimal</label>
+                                <select id="clean-decimal">
+                                    <option value="none" selected>Não alterar</option>
+                                    <option value="comma">Converter para Vírgula (Formato BR: 1234,56)</option>
+                                    <option value="dot">Converter para Ponto (Formato Internacional: 1234.56)</option>
+                                </select>
+                            </div>
+
+                            <!-- Date Settings -->
+                            <div class="form-group">
+                                <label for="clean-date">Padronizar Formato de Datas</label>
+                                <select id="clean-date">
+                                    <option value="none" selected>Não alterar</option>
+                                    <option value="dmy">Converter para DD/MM/AAAA</option>
+                                </select>
+                                <small class="help-text">Tenta detectar datas escritas como AAAA-MM-DD e converte para o formato brasileiro.</small>
+                            </div>
+
+                            <!-- Case settings -->
+                            <div class="form-group">
+                                <label for="clean-case">Caixa de Texto</label>
+                                <select id="clean-case">
+                                    <option value="none" selected>Não alterar</option>
+                                    <option value="upper">TUDO MAIÚSCULO (EXEMPLO)</option>
+                                    <option value="lower">tudo minúsculo (exemplo)</option>
+                                    <option value="title">Primeira Letra de Cada Palavra Maiúscula (Exemplo)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Tab 4: Advanced Filters -->
+                        <div class="tab-pane" id="tab-filters">
+                            <div class="form-group">
+                                <label>Filtros de Registros (Linhas)</label>
+                                <p class="help-text">Adicione condições. Apenas registros que atenderem a todos os filtros serão exportados.</p>
+                                <div id="filters-list-builder" class="filters-builder-list">
+                                    <!-- Populated via JS -->
+                                </div>
+                                <button id="btn-add-filter" class="btn btn-secondary btn-sm" type="button">
+                                    <i data-lucide="plus"></i>
+                                    <span>Adicionar Filtro</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Actions & Status Card -->
+                <div class="card card-actions">
+                    <div class="action-buttons">
+                        <button id="merge-button" class="btn btn-primary">
+                            <i data-lucide="play"></i>
+                            <span>Processar e Unir Arquivos</span>
+                        </button>
+                        
+                        <div class="download-group">
+                            <select id="export-format" class="export-format-select" disabled>
+                                <option value="csv" selected>Exportar como CSV</option>
+                                <option value="xlsx">Exportar como Excel (.xlsx)</option>
+                                <option value="json">Exportar como JSON</option>
+                            </select>
+                            <button id="download-button" class="btn btn-success" disabled>
+                                <i data-lucide="download"></i>
+                                <span>Baixar Arquivo</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Status Display -->
+                    <div id="status-container" class="status-container hidden">
+                        <div id="status" class="status-box"></div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Preview Section -->
+        <section id="preview-section" class="preview-section hidden">
+            <div class="card">
+                <div class="card-header preview-header">
+                    <div class="header-left">
+                        <i data-lucide="table" class="card-icon"></i>
+                        <h2>Pré-visualização dos Dados Unidos</h2>
+                    </div>
+                    <div class="header-right">
+                        <div class="search-box-container">
+                            <i data-lucide="search" class="search-icon"></i>
+                            <input type="text" id="preview-search" placeholder="Filtrar pré-visualização...">
+                        </div>
+                        <div class="stats-badges">
+                            <span class="badge">Colunas: <strong id="stat-cols">0</strong></span>
+                            <span class="badge">Linhas: <strong id="stat-rows">0</strong></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table id="preview-table">
+                        <!-- Table generated dynamically via JS -->
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="app-footer-info">
+            <p>Seus arquivos são processados localmente. Nenhum dado é enviado a servidores externos.</p>
+        </footer>
+    </div>
 
     <script src="script.js"></script>
 </body>
