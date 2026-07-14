@@ -26,7 +26,7 @@
                 </div>
                 <div>
                     <h1>CSV Merger <span class="badge-pro">PRO</span></h1>
-                    <p>Una, filtre e formate seus arquivos CSV/Excel no seu navegador com total privacidade.</p>
+                    <p>Una, filtre, formate e analise seus arquivos CSV/Excel localmente no seu navegador.</p>
                 </div>
             </div>
             <button id="theme-toggle" class="btn-icon" title="Alternar tema">
@@ -74,9 +74,21 @@
             <section class="workspace-panel panel-right">
                 <!-- Settings Card with Tabs -->
                 <div class="card">
-                    <div class="card-header">
-                        <i data-lucide="settings" class="card-icon"></i>
-                        <h2>Configurações do Processamento</h2>
+                    <div class="card-header" style="justify-content: space-between;">
+                        <div style="display:flex; align-items:center; gap:0.75rem;">
+                            <i data-lucide="settings" class="card-icon"></i>
+                            <h2>Configurações do Processamento</h2>
+                        </div>
+                        <!-- Recipe Actions Bar -->
+                        <div class="recipe-actions-bar" style="display:flex; gap:0.5rem; align-items:center;">
+                            <button id="btn-export-recipe" class="btn btn-secondary btn-sm" style="padding:4px 8px; font-size:0.75rem; display:flex; align-items:center; gap:4px;" type="button" title="Exportar configurações">
+                                <i data-lucide="save" style="width:12px; height:12px;"></i> <span>Receita</span>
+                            </button>
+                            <button id="btn-import-trigger" class="btn btn-secondary btn-sm" style="padding:4px 8px; font-size:0.75rem; display:flex; align-items:center; gap:4px;" type="button" title="Importar configurações">
+                                <i data-lucide="folder-open" style="width:12px; height:12px;"></i> <span>Importar</span>
+                            </button>
+                            <input type="file" id="recipe-file-input" accept=".json" style="display:none;">
+                        </div>
                     </div>
                     
                     <!-- Tabs Navigation -->
@@ -96,8 +108,28 @@
                                 <select id="merge-mode">
                                     <option value="smart" selected>Alinhamento Inteligente (Por Nome de Coluna)</option>
                                     <option value="simple">Alinhamento Simples (Por Posição/Índice)</option>
+                                    <option value="join">Relacionar Tabelas (SQL JOIN / Lateral)</option>
                                 </select>
-                                <small class="help-text">O modo inteligente mapeia colunas iguais mesmo em ordens diferentes.</small>
+                                <small class="help-text">O modo inteligente empilha colunas por nome. O Join une as tabelas lateralmente por uma chave comum.</small>
+                            </div>
+
+                            <!-- Join Key Selection (Only visible in Join mode) -->
+                            <div class="form-group hidden" id="join-key-group">
+                                <label for="join-key">Coluna Chave (Join Key)</label>
+                                <select id="join-key">
+                                    <!-- Populated via JS based on detected columns -->
+                                </select>
+                                <small class="help-text">Escolha a coluna de identificação comum que correlacionará os arquivos.</small>
+                            </div>
+
+                            <!-- Join Type Selection (Only visible in Join mode) -->
+                            <div class="form-group hidden" id="join-type-group">
+                                <label for="join-type">Tipo de Relacionamento (Join Type)</label>
+                                <select id="join-type">
+                                    <option value="left" selected>Left Join (Base no 1º arquivo carregado)</option>
+                                    <option value="inner">Inner Join (Apenas registros coincidentes em todos)</option>
+                                    <option value="full">Full Outer Join (Manter todos os registros de todas as chaves)</option>
+                                </select>
                             </div>
 
                             <!-- Column Strategy (Only for smart mode) -->
@@ -205,6 +237,18 @@
                                     <option value="title">Primeira Letra de Cada Palavra Maiúscula (Exemplo)</option>
                                 </select>
                             </div>
+
+                            <!-- Empty Value Imputation -->
+                            <div class="form-group">
+                                <label class="checkbox-label" style="font-weight: 600; font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted);">
+                                    <input type="checkbox" id="clean-fill-empty">
+                                    <span>Substituir Valores Vazios / Nulos</span>
+                                </label>
+                                <div style="display:flex; gap:0.5rem; margin-top:0.25rem;">
+                                    <input type="text" id="clean-fill-value" value="N/A" placeholder="Texto para preenchimento. Ex: N/A, 0">
+                                </div>
+                                <small class="help-text">Substitui automaticamente qualquer célula em branco pelo valor acima.</small>
+                            </div>
                         </div>
 
                         <!-- Tab 4: Advanced Filters -->
@@ -259,23 +303,39 @@
                 <div class="card-header preview-header">
                     <div class="header-left">
                         <i data-lucide="table" class="card-icon"></i>
-                        <h2>Pré-visualização dos Dados Unidos</h2>
+                        <h2>Resultados do Processamento</h2>
                     </div>
-                    <div class="header-right">
+                    
+                    <!-- Preview Tabs Navigation -->
+                    <div class="preview-tabs">
+                        <button class="preview-tab-btn active" data-prev-tab="prev-tab-table">Visualização dos Dados</button>
+                        <button class="preview-tab-btn" data-prev-tab="prev-tab-quality">Diagnóstico & Qualidade</button>
+                    </div>
+                </div>
+
+                <!-- Sub-tab 1: Table view -->
+                <div class="preview-tab-content active" id="prev-tab-table">
+                    <div class="preview-sub-header">
                         <div class="search-box-container">
                             <i data-lucide="search" class="search-icon"></i>
-                            <input type="text" id="preview-search" placeholder="Filtrar pré-visualização...">
+                            <input type="text" id="preview-search" placeholder="Filtrar resultados na tela...">
                         </div>
                         <div class="stats-badges">
                             <span class="badge">Colunas: <strong id="stat-cols">0</strong></span>
                             <span class="badge">Linhas: <strong id="stat-rows">0</strong></span>
                         </div>
                     </div>
+                    
+                    <div class="table-container">
+                        <table id="preview-table">
+                            <!-- Table generated dynamically via JS -->
+                        </table>
+                    </div>
                 </div>
-                <div class="table-container">
-                    <table id="preview-table">
-                        <!-- Table generated dynamically via JS -->
-                    </table>
+
+                <!-- Sub-tab 2: Quality & Profiling reports -->
+                <div class="preview-tab-content" id="prev-tab-quality">
+                    <!-- Populated via JS -->
                 </div>
             </div>
         </section>

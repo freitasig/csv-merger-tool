@@ -8,6 +8,10 @@ let mergedCsvString = null;
 let mergedHeaders = [];
 let mergedDataRows = [];
 
+// Diagnostic reports state
+let validationWarnings = [];
+let columnStats = {};
+
 // DOM Elements
 const themeToggleBtn = document.getElementById('theme-toggle');
 const dropzone = document.getElementById('dropzone');
@@ -17,6 +21,10 @@ const emptyStateFiles = document.getElementById('empty-state-files');
 const fileCountBadge = document.getElementById('file-count');
 
 const mergeModeSelect = document.getElementById('merge-mode');
+const joinKeyGroup = document.getElementById('join-key-group');
+const joinKeySelect = document.getElementById('join-key');
+const joinTypeGroup = document.getElementById('join-type-group');
+const joinTypeSelect = document.getElementById('join-type');
 const strategyGroup = document.getElementById('strategy-group');
 const columnStrategySelect = document.getElementById('column-strategy');
 const inputEncodingSelect = document.getElementById('input-encoding');
@@ -31,6 +39,11 @@ const downloadButton = document.getElementById('download-button');
 const exportFormatSelect = document.getElementById('export-format');
 const statusContainer = document.getElementById('status-container');
 const statusDiv = document.getElementById('status');
+
+// Recipe Buttons
+const btnExportRecipe = document.getElementById('btn-export-recipe');
+const btnImportTrigger = document.getElementById('btn-import-trigger');
+const recipeFileInput = document.getElementById('recipe-file-input');
 
 const previewSection = document.getElementById('preview-section');
 const previewTable = document.getElementById('preview-table');
@@ -50,7 +63,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     setupTabSwitching();
+    setupPreviewTabSwitching();
     setupFiltersBuilder();
+    setupRecipeHandlers();
     renderFileList();
     scanColumns();
 });
@@ -84,12 +99,206 @@ function setupTabSwitching() {
     });
 }
 
-// Toggle configuration visibility based on merge mode
-mergeModeSelect.addEventListener('change', (e) => {
-    if (e.target.value === 'simple') {
+// Preview Area Sub-Tabs Switching
+function setupPreviewTabSwitching() {
+    const tabButtons = document.querySelectorAll('.preview-tab-btn');
+    const tabPanes = document.querySelectorAll('.preview-tab-content');
+
+    tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetTab = btn.getAttribute('data-prev-tab');
+            
+            tabButtons.forEach(b => b.classList.remove('active'));
+            tabPanes.forEach(p => p.classList.remove('active'));
+            
+            btn.classList.add('active');
+            document.getElementById(targetTab).classList.add('active');
+        });
+    });
+}
+
+// Recipe JSON Loading/Downloading
+function setupRecipeHandlers() {
+    btnExportRecipe.addEventListener('click', exportRecipe);
+    
+    btnImportTrigger.addEventListener('click', () => {
+        recipeFileInput.click();
+    });
+    
+    recipeFileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const recipe = JSON.parse(event.target.result);
+                applyRecipe(recipe);
+                e.target.value = ''; // Reset input
+            } catch (err) {
+                updateStatus(`Erro ao importar receita: JSON inválido. ${err.message}`, 'error');
+            }
+        };
+        reader.readAsText(file);
+    });
+}
+
+function exportRecipe() {
+    const recipe = {
+        mergeMode: mergeModeSelect.value,
+        joinKey: joinKeySelect.value,
+        joinType: joinTypeSelect.value,
+        columnStrategy: columnStrategySelect.value,
+        inputEncoding: inputEncodingSelect.value,
+        inputDelimiter: inputDelimiterSelect.value,
+        outputDelimiter: outputDelimiterSelect.value,
+        outputFilename: outputFilenameInput.value,
+        optSourceCol: optSourceColCheckbox.checked,
+        optDedup: optDedupCheckbox.checked,
+        columnMappings: columnMappings,
+        cleanDecimal: document.getElementById('clean-decimal').value,
+        cleanDate: document.getElementById('clean-date').value,
+        cleanCase: document.getElementById('clean-case').value,
+        cleanFillEmpty: document.getElementById('clean-fill-empty').checked,
+        cleanFillValue: document.getElementById('clean-fill-value').value,
+        activeFilters: activeFilters.map(f => ({ column: f.column, operator: f.operator, value: f.value }))
+    };
+    
+    const jsonString = JSON.stringify(recipe, null, 2);
+    downloadFileBlob(jsonString, 'receita_processamento.json', 'application/json');
+    updateStatus("Receita exportada com sucesso!", "success");
+}
+
+function applyRecipe(recipe) {
+    if (!recipe || typeof recipe !== 'object') {
+        throw new Error("Receita corrompida ou inválida.");
+    }
+    
+    if (recipe.mergeMode !== undefined) mergeModeSelect.value = recipe.mergeMode;
+    if (recipe.columnStrategy !== undefined) columnStrategySelect.value = recipe.columnStrategy;
+    if (recipe.inputEncoding !== undefined) inputEncodingSelect.value = recipe.inputEncoding;
+    if (recipe.inputDelimiter !== undefined) inputDelimiterSelect.value = recipe.inputDelimiter;
+    if (recipe.outputDelimiter !== undefined) outputDelimiterSelect.value = recipe.outputDelimiter;
+    if (recipe.outputFilename !== undefined) outputFilenameInput.value = recipe.outputFilename;
+    if (recipe.optSourceCol !== undefined) optSourceColCheckbox.checked = recipe.optSourceCol;
+    if (recipe.optDedup !== undefined) optDedupCheckbox.checked = recipe.optDedup;
+    
+    if (recipe.cleanDecimal !== undefined) document.getElementById('clean-decimal').value = recipe.cleanDecimal;
+    if (recipe.cleanDate !== undefined) document.getElementById('clean-date').value = recipe.cleanDate;
+    if (recipe.cleanCase !== undefined) document.getElementById('clean-case').value = recipe.cleanCase;
+    if (recipe.cleanFillEmpty !== undefined) document.getElementById('clean-fill-empty').checked = recipe.cleanFillEmpty;
+    if (recipe.cleanFillValue !== undefined) document.getElementById('clean-fill-value').value = recipe.cleanFillValue;
+    
+    // Set mappings
+    if (recipe.columnMappings !== undefined) {
+        columnMappings = { ...columnMappings, ...recipe.columnMappings };
+    }
+    
+    // Toggle selector visibility based on merge mode
+    const mode = mergeModeSelect.value;
+    if (mode === 'simple') {
         strategyGroup.classList.add('hidden');
+        joinKeyGroup.classList.add('hidden');
+        joinTypeGroup.classList.add('hidden');
+    } else if (mode === 'join') {
+        strategyGroup.classList.add('hidden');
+        joinKeyGroup.classList.remove('hidden');
+        joinTypeGroup.classList.remove('hidden');
+        if (recipe.joinKey) joinKeySelect.value = recipe.joinKey;
+        if (recipe.joinType) joinTypeSelect.value = recipe.joinType;
     } else {
         strategyGroup.classList.remove('hidden');
+        joinKeyGroup.classList.add('hidden');
+        joinTypeGroup.classList.add('hidden');
+    }
+    
+    // Rebuild active filters
+    const builder = document.getElementById('filters-list-builder');
+    builder.innerHTML = '';
+    activeFilters = [];
+    
+    if (Array.isArray(recipe.activeFilters)) {
+        recipe.activeFilters.forEach(f => {
+            const filterId = Math.random().toString(36).substring(2, 9);
+            const filterObj = { id: filterId, column: f.column, operator: f.operator, value: f.value };
+            activeFilters.push(filterObj);
+            
+            const row = document.createElement('div');
+            row.className = 'filter-row';
+            row.id = `filter-${filterId}`;
+            
+            const colSelect = document.createElement('select');
+            colSelect.className = 'filter-col-select';
+            colSelect.innerHTML = '<option value="">-- Selecione a Coluna --</option>';
+            
+            const opSelect = document.createElement('select');
+            opSelect.innerHTML = `
+                <option value="contains" ${f.operator === 'contains' ? 'selected' : ''}>Contém</option>
+                <option value="equals" ${f.operator === 'equals' ? 'selected' : ''}>Igual a</option>
+                <option value="starts_with" ${f.operator === 'starts_with' ? 'selected' : ''}>Começa com</option>
+                <option value="ends_with" ${f.operator === 'ends_with' ? 'selected' : ''}>Termina com</option>
+                <option value="is_empty" ${f.operator === 'is_empty' ? 'selected' : ''}>É Vazio</option>
+                <option value="is_not_empty" ${f.operator === 'is_not_empty' ? 'selected' : ''}>Não é Vazio</option>
+            `;
+            opSelect.addEventListener('change', (e) => {
+                filterObj.operator = e.target.value;
+                disableDownload();
+            });
+            
+            const valInput = document.createElement('input');
+            valInput.type = 'text';
+            valInput.value = f.value;
+            valInput.placeholder = 'Valor...';
+            valInput.addEventListener('input', (e) => {
+                filterObj.value = e.target.value;
+                disableDownload();
+            });
+            
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 'btn-delete';
+            delBtn.innerHTML = '<i data-lucide="trash-2"></i>';
+            delBtn.addEventListener('click', () => {
+                activeFilters = activeFilters.filter(fl => fl.id !== filterId);
+                row.remove();
+                disableDownload();
+            });
+            
+            row.appendChild(colSelect);
+            row.appendChild(opSelect);
+            row.appendChild(valInput);
+            row.appendChild(delBtn);
+            builder.appendChild(row);
+        });
+    }
+    
+    renderColumnMapper();
+    updateFilterColumnSelectors();
+    updateJoinKeySelector();
+    
+    if (window.lucide) {
+        window.lucide.createIcons();
+    }
+    
+    updateStatus("Receita carregada com sucesso! Clique em 'Processar' para aplicar as mudanças.", "success");
+    disableDownload();
+}
+
+// Toggle configurations visibility based on merge mode
+mergeModeSelect.addEventListener('change', (e) => {
+    const val = e.target.value;
+    if (val === 'simple') {
+        strategyGroup.classList.add('hidden');
+        joinKeyGroup.classList.add('hidden');
+        joinTypeGroup.classList.add('hidden');
+    } else if (val === 'join') {
+        strategyGroup.classList.add('hidden');
+        joinKeyGroup.classList.remove('hidden');
+        joinTypeGroup.classList.remove('hidden');
+    } else {
+        strategyGroup.classList.remove('hidden');
+        joinKeyGroup.classList.add('hidden');
+        joinTypeGroup.classList.add('hidden');
     }
 });
 
@@ -263,6 +472,7 @@ async function scanColumns() {
         columnMappings = {};
         renderColumnMapper();
         updateFilterColumnSelectors();
+        updateJoinKeySelector();
         return;
     }
     
@@ -292,6 +502,7 @@ async function scanColumns() {
     
     renderColumnMapper();
     updateFilterColumnSelectors();
+    updateJoinKeySelector();
 }
 
 function parseFirstRow(file, encoding, delimiter) {
@@ -463,7 +674,22 @@ function updateFilterColumnSelectors() {
     });
 }
 
-// Data Cleaning operations
+function updateJoinKeySelector() {
+    if (!joinKeySelect) return;
+    const currentVal = joinKeySelect.value;
+    joinKeySelect.innerHTML = '<option value="">-- Escolha a coluna chave --</option>';
+    detectedColumns.forEach(col => {
+        const opt = document.createElement('option');
+        opt.value = col;
+        opt.textContent = col;
+        if (col === currentVal) {
+            opt.selected = true;
+        }
+        joinKeySelect.appendChild(opt);
+    });
+}
+
+// Data Cleaning Helper Functions
 function convertDecimal(val, option) {
     if (!val || typeof val !== 'string') return val;
     const trimmed = val.trim();
@@ -507,8 +733,11 @@ function applyTextCase(val, option) {
     return val;
 }
 
-// Global filter executor
+// Global Filter and Data Quality Cleaner
 function applyFiltersAndCleaning(rows, headers, decimalOpt, dateOpt, textCaseOpt, filters) {
+    const fillEmptyActive = document.getElementById('clean-fill-empty').checked;
+    const fillEmptyValue = document.getElementById('clean-fill-value').value;
+    
     let result = [];
     
     for (let row of rows) {
@@ -518,7 +747,7 @@ function applyFiltersAndCleaning(rows, headers, decimalOpt, dateOpt, textCaseOpt
             const { column, operator, value } = filter;
             if (!column) continue;
             
-            // Map column selection to mapped/renamed headers
+            // Map column filter to the mapped/renamed header name
             const mappedColumn = columnMappings[column] || column;
             
             let cellVal = "";
@@ -549,22 +778,34 @@ function applyFiltersAndCleaning(rows, headers, decimalOpt, dateOpt, textCaseOpt
         if (Array.isArray(row)) {
             cleanRow = [...row];
             for (let i = 0; i < cleanRow.length; i++) {
-                let val = String(cleanRow[i]);
-                if (decimalOpt !== 'none') val = convertDecimal(val, decimalOpt);
-                if (dateOpt !== 'none') val = standardizeDate(val, dateOpt);
-                if (textCaseOpt !== 'none') val = applyTextCase(val, textCaseOpt);
+                let val = String(cleanRow[i]).trim();
+                
+                // Impute empty cells
+                if (val === "" && fillEmptyActive) {
+                    val = fillEmptyValue;
+                } else if (val !== "") {
+                    if (decimalOpt !== 'none') val = convertDecimal(val, decimalOpt);
+                    if (dateOpt !== 'none') val = standardizeDate(val, dateOpt);
+                    if (textCaseOpt !== 'none') val = applyTextCase(val, textCaseOpt);
+                }
                 cleanRow[i] = val;
             }
         } else {
             cleanRow = { ...row };
             for (let key in cleanRow) {
-                // Safeguard: Never scramble or format the added Source File column
+                // Safeguard: Never mutate the added Source File indicator column
                 if (key.startsWith("Origem_Arquivo")) continue;
                 
-                let val = String(cleanRow[key]);
-                if (decimalOpt !== 'none') val = convertDecimal(val, decimalOpt);
-                if (dateOpt !== 'none') val = standardizeDate(val, dateOpt);
-                if (textCaseOpt !== 'none') val = applyTextCase(val, textCaseOpt);
+                let val = String(cleanRow[key]).trim();
+                
+                // Impute empty cells
+                if (val === "" && fillEmptyActive) {
+                    val = fillEmptyValue;
+                } else if (val !== "") {
+                    if (decimalOpt !== 'none') val = convertDecimal(val, decimalOpt);
+                    if (dateOpt !== 'none') val = standardizeDate(val, dateOpt);
+                    if (textCaseOpt !== 'none') val = applyTextCase(val, textCaseOpt);
+                }
                 cleanRow[key] = val;
             }
         }
@@ -572,6 +813,349 @@ function applyFiltersAndCleaning(rows, headers, decimalOpt, dateOpt, textCaseOpt
     }
     
     return result;
+}
+
+// Data Quality Validation Rules
+function isValidEmail(val) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(val);
+}
+
+function isValidCPF(cpf) {
+    cpf = String(cpf).replace(/[^\d]/g, '');
+    if (cpf.length !== 11) return false;
+    if (/^(\d)\1{10}$/.test(cpf)) return false; // skip 111.111.111-11, etc.
+    
+    let sum = 0;
+    let remainder;
+    
+    for (let i = 1; i <= 9; i++) sum = sum + parseInt(cpf.substring(i - 1, i)) * (11 - i);
+    remainder = (sum * 10) % 11;
+    if ((remainder === 10) || (remainder === 11)) remainder = 0;
+    if (remainder !== parseInt(cpf.substring(9, 10))) return false;
+    
+    sum = 0;
+    for (let i = 1; i <= 10; i++) sum = sum + parseInt(cpf.substring(i - 1, i)) * (12 - i);
+    remainder = (sum * 10) % 11;
+    if ((remainder === 10) || (remainder === 11)) remainder = 0;
+    if (remainder !== parseInt(cpf.substring(10, 11))) return false;
+    
+    return true;
+}
+
+function isValidCNPJ(cnpj) {
+    cnpj = String(cnpj).replace(/[^\d]/g, '');
+    if (cnpj.length !== 14) return false;
+    if (/^(\d)\1{13}$/.test(cnpj)) return false;
+    
+    let size = cnpj.length - 2;
+    let numbers = cnpj.substring(0, size);
+    const digits = cnpj.substring(size);
+    let sum = 0;
+    let pos = size - 7;
+    for (let i = size; i >= 1; i--) {
+        sum += parseInt(numbers.charAt(size - i)) * pos--;
+        if (pos < 2) pos = 9;
+    }
+    let result = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+    if (result !== parseInt(digits.charAt(0))) return false;
+    
+    size = size + 1;
+    numbers = cnpj.substring(0, size);
+    sum = 0;
+    pos = size - 7;
+    for (let i = size; i >= 1; i--) {
+        sum += parseInt(numbers.charAt(size - i)) * pos--;
+        if (pos < 2) pos = 9;
+    }
+    result = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+    if (result !== parseInt(digits.charAt(1))) return false;
+    
+    return true;
+}
+
+// Data quality and profiling analytics
+function analyzeDataQuality(headers, rows) {
+    validationWarnings = [];
+    columnStats = {};
+    
+    // 1. Detect column types based on first 100 rows
+    const sampleRows = rows.slice(0, 100);
+    const colTypes = {};
+    
+    headers.forEach(h => {
+        let emailScores = 0;
+        let cpfScores = 0;
+        let cnpjScores = 0;
+        let numericScores = 0;
+        let nonEmptyCount = 0;
+        
+        sampleRows.forEach(row => {
+            let val = "";
+            if (Array.isArray(row)) {
+                const idx = headers.indexOf(h);
+                val = row[idx] !== undefined && row[idx] !== null ? String(row[idx]).trim() : "";
+            } else {
+                val = row[h] !== undefined && row[h] !== null ? String(row[h]).trim() : "";
+            }
+            
+            if (val) {
+                nonEmptyCount++;
+                const digitsOnly = val.replace(/[^\d]/g, '');
+                
+                if (val.includes('@') && val.includes('.')) emailScores++;
+                else if (digitsOnly.length === 11) cpfScores++;
+                else if (digitsOnly.length === 14) cnpjScores++;
+                else if (!isNaN(Number(val.replace(',', '.')))) numericScores++;
+            }
+        });
+        
+        if (nonEmptyCount === 0) {
+            colTypes[h] = 'Texto';
+        } else if (emailScores / nonEmptyCount > 0.5) {
+            colTypes[h] = 'Email';
+        } else if (cpfScores / nonEmptyCount > 0.5) {
+            colTypes[h] = 'CPF';
+        } else if (cnpjScores / nonEmptyCount > 0.5) {
+            colTypes[h] = 'CNPJ';
+        } else if (numericScores / nonEmptyCount > 0.5) {
+            colTypes[h] = 'Numérico';
+        } else {
+            colTypes[h] = 'Texto';
+        }
+    });
+    
+    // 2. Validate values and compute stats for all rows
+    headers.forEach(h => {
+        columnStats[h] = {
+            type: colTypes[h],
+            emptyCount: 0,
+            filledCount: 0,
+            uniqueValues: new Set(),
+            sum: 0,
+            min: Infinity,
+            max: -Infinity,
+            numericCount: 0
+        };
+    });
+    
+    rows.forEach((row, rowIdx) => {
+        headers.forEach(h => {
+            let val = "";
+            if (Array.isArray(row)) {
+                const idx = headers.indexOf(h);
+                val = row[idx] !== undefined && row[idx] !== null ? String(row[idx]).trim() : "";
+            } else {
+                val = row[h] !== undefined && row[h] !== null ? String(row[h]).trim() : "";
+            }
+            
+            const stats = columnStats[h];
+            
+            if (val === "") {
+                stats.emptyCount++;
+            } else {
+                stats.filledCount++;
+                stats.uniqueValues.add(val);
+                
+                const type = stats.type;
+                if (type === 'Email' && !isValidEmail(val)) {
+                    validationWarnings.push({
+                        row: rowIdx + 1,
+                        col: h,
+                        val: val,
+                        error: "E-mail inválido"
+                    });
+                } else if (type === 'CPF' && !isValidCPF(val)) {
+                    validationWarnings.push({
+                        row: rowIdx + 1,
+                        col: h,
+                        val: val,
+                        error: "CPF inválido"
+                    });
+                } else if (type === 'CNPJ' && !isValidCNPJ(val)) {
+                    validationWarnings.push({
+                        row: rowIdx + 1,
+                        col: h,
+                        val: val,
+                        error: "CNPJ inválido"
+                    });
+                } else if (type === 'Numérico') {
+                    const num = Number(val.replace(',', '.'));
+                    if (!isNaN(num)) {
+                        stats.sum += num;
+                        stats.numericCount++;
+                        if (num < stats.min) stats.min = num;
+                        if (num > stats.max) stats.max = num;
+                    } else {
+                        validationWarnings.push({
+                            row: rowIdx + 1,
+                            col: h,
+                            val: val,
+                            error: "Valor não numérico detectado"
+                        });
+                    }
+                }
+            }
+        });
+    });
+    
+    // Finalize stats
+    headers.forEach(h => {
+        const stats = columnStats[h];
+        stats.uniqueCount = stats.uniqueValues.size;
+        delete stats.uniqueValues; // Free memory
+        
+        if (stats.numericCount > 0) {
+            stats.avg = stats.sum / stats.numericCount;
+        } else {
+            stats.min = '-';
+            stats.max = '-';
+            stats.avg = '-';
+        }
+    });
+    
+    renderQualityDashboard(headers);
+}
+
+function renderQualityDashboard(headers) {
+    const container = document.getElementById('prev-tab-quality');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    // Stats Summary Cards Row
+    const summaryCard = document.createElement('div');
+    summaryCard.className = 'quality-summary-grid';
+    
+    // Left side: Validation warnings
+    const errorsBox = document.createElement('div');
+    errorsBox.className = 'quality-box-card';
+    const warnCount = validationWarnings.length;
+    
+    errorsBox.innerHTML = `
+        <h3 style="color:${warnCount > 0 ? 'var(--color-warning)' : 'var(--color-success)'}">
+            <i data-lucide="${warnCount > 0 ? 'alert-triangle' : 'check-circle'}"></i>
+            Validação de Integridade: ${warnCount} Alerta(s)
+        </h3>
+        <p style="font-size:0.85rem; color:var(--text-muted); margin-top:0.25rem;">
+            Verificamos inconsistências e integridade de e-mails, números, CPFs e CNPJs nas colunas.
+        </p>
+    `;
+    
+    if (warnCount > 0) {
+        const warningsList = document.createElement('div');
+        warningsList.style.maxHeight = '150px';
+        warningsList.style.overflowY = 'auto';
+        warningsList.style.marginTop = '0.75rem';
+        warningsList.style.fontSize = '0.8rem';
+        warningsList.style.display = 'flex';
+        warningsList.style.flexDirection = 'column';
+        warningsList.style.gap = '4px';
+        
+        validationWarnings.slice(0, 50).forEach(warn => {
+            const item = document.createElement('div');
+            item.style.padding = '4px 8px';
+            item.style.borderRadius = '4px';
+            item.style.backgroundColor = 'rgba(245, 158, 11, 0.06)';
+            item.style.borderLeft = '3px solid var(--color-warning)';
+            item.innerHTML = `Linha <strong>#${warn.row}</strong> | Coluna <strong>${warn.col}</strong>: "${warn.val}" - <span style="color:var(--color-warning);">${warn.error}</span>`;
+            warningsList.appendChild(item);
+        });
+        
+        if (warnCount > 50) {
+            const more = document.createElement('div');
+            more.style.color = 'var(--text-muted)';
+            more.style.textAlign = 'center';
+            more.style.padding = '4px';
+            more.textContent = `... e outros ${warnCount - 50} alertas.`;
+            warningsList.appendChild(more);
+        }
+        errorsBox.appendChild(warningsList);
+    } else {
+        const successMsg = document.createElement('p');
+        successMsg.style.fontSize = '0.9rem';
+        successMsg.style.marginTop = '1rem';
+        successMsg.style.color = 'var(--color-success)';
+        successMsg.textContent = "✓ Nenhuma inconsistência detectada nos formatos padrão!";
+        errorsBox.appendChild(successMsg);
+    }
+    
+    // Right side: Statistics summary
+    const statsBox = document.createElement('div');
+    statsBox.className = 'quality-box-card';
+    statsBox.innerHTML = `
+        <h3><i data-lucide="bar-chart-3"></i> Resumo Estatístico</h3>
+        <ul style="margin-top: 0.75rem; font-size: 0.85rem; display:flex; flex-direction:column; gap:8px; list-style:none;">
+            <li>Total de Linhas Processadas: <strong>${mergedDataRows.length}</strong></li>
+            <li>Total de Colunas Mapeadas: <strong>${headers.length}</strong></li>
+            <li>Colunas Validadas Especialmente: <strong>${headers.filter(h => ['Email','CPF','CNPJ'].includes(columnStats[h].type)).length}</strong></li>
+            <li>Qualidade Geral do Preenchimento: <strong>${calculateOverallFillRate()}%</strong></li>
+        </ul>
+    `;
+    
+    summaryCard.appendChild(errorsBox);
+    summaryCard.appendChild(statsBox);
+    container.appendChild(summaryCard);
+    
+    // Columns Details Profiling Table
+    const tableTitle = document.createElement('h3');
+    tableTitle.style.marginBottom = '0.5rem';
+    tableTitle.textContent = "Perfil das Colunas (Data Profiling)";
+    container.appendChild(tableTitle);
+    
+    const tableWrapper = document.createElement('div');
+    tableWrapper.className = 'table-container';
+    
+    const table = document.createElement('table');
+    table.innerHTML = `
+        <thead>
+            <tr>
+                <th>Coluna</th>
+                <th>Tipo Detectado</th>
+                <th>Preenchimento (%)</th>
+                <th>Valores Únicos</th>
+                <th>Mínimo</th>
+                <th>Máximo</th>
+                <th>Média</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    `;
+    
+    const tbody = table.querySelector('tbody');
+    headers.forEach(h => {
+        const stats = columnStats[h];
+        const total = stats.emptyCount + stats.filledCount;
+        const fillRate = total > 0 ? ((stats.filledCount / total) * 100).toFixed(1) : 0;
+        
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><strong>${h}</strong></td>
+            <td><span class="badge" style="font-size:0.75rem;">${stats.type}</span></td>
+            <td>${fillRate}% (${stats.filledCount}/${total})</td>
+            <td>${stats.uniqueCount}</td>
+            <td>${stats.min !== '-' && typeof stats.min === 'number' ? stats.min.toFixed(2) : stats.min}</td>
+            <td>${stats.max !== '-' && typeof stats.max === 'number' ? stats.max.toFixed(2) : stats.max}</td>
+            <td>${stats.avg !== '-' && typeof stats.avg === 'number' ? stats.avg.toFixed(2) : stats.avg}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+    tableWrapper.appendChild(table);
+    container.appendChild(tableWrapper);
+    
+    if (window.lucide) {
+        window.lucide.createIcons();
+    }
+}
+
+function calculateOverallFillRate() {
+    let filled = 0;
+    let total = 0;
+    for (let key in columnStats) {
+        filled += columnStats[key].filledCount;
+        total += columnStats[key].emptyCount + columnStats[key].filledCount;
+    }
+    return total > 0 ? ((filled / total) * 100).toFixed(1) : 0;
 }
 
 // Promisified PapaParse Readers
@@ -630,9 +1214,16 @@ mergeButton.addEventListener('click', async () => {
     try {
         if (mergeMode === 'smart') {
             await runSmartMerge(encoding, delimiter, columnStrategy, optSourceCol, optDedup, outputDelimiter);
-        } else {
+        } else if (mergeMode === 'simple') {
             await runSimpleMerge(encoding, delimiter, optSourceCol, optDedup, outputDelimiter);
+        } else if (mergeMode === 'join') {
+            const joinKey = joinKeySelect.value;
+            const joinType = joinTypeSelect.value;
+            await runJoinMerge(encoding, delimiter, joinKey, joinType, optSourceCol, optDedup, outputDelimiter);
         }
+
+        // Run data validation and profiling reports
+        analyzeDataQuality(mergedHeaders, mergedDataRows);
 
         // Success state
         updateStatus(`Sucesso! Processamento concluído: ${mergedDataRows.length} linhas unidas. Pronto para download.`, 'success');
@@ -854,12 +1445,203 @@ async function runSimpleMerge(encoding, delimiter, optSourceCol, optDedup, outpu
     });
 }
 
+// Join Merge: Relate tables laterally by key matching
+async function runJoinMerge(encoding, delimiter, joinKey, joinType, optSourceCol, optDedup, outputDelimiter) {
+    if (!joinKey) {
+        throw new Error("Por favor, selecione uma coluna chave para realizar a união lateral (JOIN) na aba 'União'.");
+    }
+
+    let allFilesData = [];
+    let headersSet = new Set();
+    
+    // Add join key first to keep it as first column in output
+    headersSet.add(joinKey);
+
+    // Phase 1: Parse all files
+    for (let i = 0; i < selectedFiles.length; i++) {
+        const fileObj = selectedFiles[i].file;
+        updateStatus(`Lendo e mapeando colunas para Join (${i+1}/${selectedFiles.length}): ${fileObj.name}...`, 'processing');
+        
+        const results = await parseFileSmart(fileObj, encoding, delimiter);
+        
+        // Trim headers and apply mapping
+        const mappedHeaders = (results.meta.fields || []).map(h => {
+            const trimmed = h.trim();
+            return columnMappings[trimmed] || trimmed;
+        });
+        
+        // Map row keys according to columnMappings
+        const mappedRows = (results.data || []).map(row => {
+            const mappedRow = {};
+            for (const key in row) {
+                const trimmedKey = key.trim();
+                const mappedKey = columnMappings[trimmedKey] || trimmedKey;
+                mappedRow[mappedKey] = row[key];
+            }
+            return mappedRow;
+        });
+
+        allFilesData.push({
+            fileName: fileObj.name,
+            headers: mappedHeaders,
+            data: mappedRows
+        });
+
+        mappedHeaders.forEach(h => headersSet.add(h));
+    }
+
+    const finalHeaders = Array.from(headersSet);
+    
+    // Verify key exists in base file
+    const baseHeaders = allFilesData[0].headers;
+    if (!baseHeaders.includes(joinKey)) {
+        throw new Error(`A coluna chave "${joinKey}" não foi encontrada no primeiro arquivo ("${allFilesData[0].fileName}").`);
+    }
+
+    // Map: KeyVal -> Combined Row Object
+    let joinMap = new Map();
+    
+    // 1. Populate map with rows from base file
+    allFilesData[0].data.forEach(row => {
+        const keyVal = String(row[joinKey] !== undefined && row[joinKey] !== null ? row[joinKey] : "").trim();
+        if (!keyVal) return; // Skip empty keys
+        
+        const combined = {};
+        finalHeaders.forEach(h => {
+            combined[h] = "";
+        });
+        
+        // Populate base values
+        baseHeaders.forEach(h => {
+            combined[h] = row[h] !== undefined && row[h] !== null ? row[h] : "";
+        });
+        
+        if (optSourceCol) {
+            combined["Origem_Arquivo"] = allFilesData[0].fileName;
+        }
+        
+        joinMap.set(keyVal, combined);
+    });
+
+    // 2. Loop through subsequent files to join side-by-side
+    for (let i = 1; i < allFilesData.length; i++) {
+        const fileInfo = allFilesData[i];
+        const fileHeaders = fileInfo.headers;
+        const currentFileName = fileInfo.fileName;
+        
+        if (!fileHeaders.includes(joinKey)) {
+            if (joinType === 'inner') {
+                joinMap.clear();
+                break;
+            }
+            continue; // For left and full joins, skip updating but preserve base records
+        }
+
+        const keysFoundInThisFile = new Set();
+
+        fileInfo.data.forEach(row => {
+            const keyVal = String(row[joinKey] !== undefined && row[joinKey] !== null ? row[joinKey] : "").trim();
+            if (!keyVal) return;
+
+            keysFoundInThisFile.add(keyVal);
+
+            if (joinMap.has(keyVal)) {
+                // Key exists: merge values into record
+                const targetRow = joinMap.get(keyVal);
+                fileHeaders.forEach(h => {
+                    if (h !== joinKey) {
+                        targetRow[h] = row[h] !== undefined && row[h] !== null ? row[h] : "";
+                    }
+                });
+                if (optSourceCol) {
+                    targetRow["Origem_Arquivo"] = targetRow["Origem_Arquivo"] 
+                        ? `${targetRow["Origem_Arquivo"]}, ${currentFileName}` 
+                        : currentFileName;
+                }
+            } else if (joinType === 'full') {
+                // Key does not exist in base and we are doing Full Join: add new row
+                const combined = {};
+                finalHeaders.forEach(h => {
+                    combined[h] = "";
+                });
+                
+                combined[joinKey] = keyVal;
+                fileHeaders.forEach(h => {
+                    combined[h] = row[h] !== undefined && row[h] !== null ? row[h] : "";
+                });
+                
+                if (optSourceCol) {
+                    combined["Origem_Arquivo"] = currentFileName;
+                }
+                joinMap.set(keyVal, combined);
+            }
+        });
+
+        if (joinType === 'inner') {
+            // Delete keys from joint map that do not exist in current matched file
+            for (let existingKey of joinMap.keys()) {
+                if (!keysFoundInThisFile.has(existingKey)) {
+                    joinMap.delete(existingKey);
+                }
+            }
+        }
+    }
+
+    let combinedRows = Array.from(joinMap.values());
+
+    // Rename Origem_Arquivo to prevent collision if needed
+    let finalSourceColName = "Origem_Arquivo";
+    if (optSourceCol) {
+        let suffix = 1;
+        while (finalHeaders.includes(finalSourceColName)) {
+            finalSourceColName = `Origem_Arquivo_${suffix}`;
+            suffix++;
+        }
+        finalHeaders.push(finalSourceColName);
+        
+        if (finalSourceColName !== "Origem_Arquivo") {
+            combinedRows.forEach(row => {
+                row[finalSourceColName] = row["Origem_Arquivo"];
+                delete row["Origem_Arquivo"];
+            });
+        }
+    }
+
+    // Phase 3: Apply data cleaning and row filters
+    updateStatus("Aplicando filtros de registros e regras de limpeza...", 'processing');
+    const cleanDecimalOpt = document.getElementById('clean-decimal').value;
+    const cleanDateOpt = document.getElementById('clean-date').value;
+    const cleanCaseOpt = document.getElementById('clean-case').value;
+    
+    combinedRows = applyFiltersAndCleaning(combinedRows, finalHeaders, cleanDecimalOpt, cleanDateOpt, cleanCaseOpt, activeFilters);
+
+    // Deduplication step
+    if (optDedup) {
+        updateStatus("Removendo linhas duplicadas...", 'processing');
+        const seen = new Set();
+        combinedRows = combinedRows.filter(row => {
+            const serialized = JSON.stringify(row);
+            if (seen.has(serialized)) return false;
+            seen.add(serialized);
+            return true;
+        });
+    }
+
+    // Save final globally
+    mergedHeaders = finalHeaders;
+    mergedDataRows = combinedRows;
+    mergedCsvString = Papa.unparse(combinedRows, {
+        columns: finalHeaders,
+        delimiter: outputDelimiter
+    });
+}
+
 // Generate the visual preview grid
 function generatePreview(headers, rows) {
     previewTable.innerHTML = '';
     
     if (previewSearch) {
-        previewSearch.value = ''; // Reset preview search box
+        previewSearch.value = ''; // Reset preview search box filter
     }
     
     // Header block
@@ -878,8 +1660,18 @@ function generatePreview(headers, rows) {
     // Preview up to 10 rows
     const previewSubset = rows.slice(0, 10);
     
-    previewSubset.forEach(row => {
+    previewSubset.forEach((row, idx) => {
         const tr = document.createElement('tr');
+        
+        // Highlight rows with validation warnings
+        const actualRowNumber = idx + 1;
+        const hasWarning = validationWarnings.some(w => w.row === actualRowNumber);
+        if (hasWarning) {
+            tr.style.backgroundColor = 'rgba(245, 158, 11, 0.05)';
+            tr.style.borderLeft = '3px solid var(--color-warning)';
+            tr.title = "Esta linha contém dados com alertas de integridade/validação. Verifique a aba Diagnóstico.";
+        }
+        
         headers.forEach(h => {
             const td = document.createElement('td');
             let cellVal = "";
@@ -891,6 +1683,14 @@ function generatePreview(headers, rows) {
                 // If smart merge, row is object
                 cellVal = row[h] !== undefined && row[h] !== null ? row[h] : "";
             }
+            
+            // Highlight specific cells that have validation warnings
+            const cellHasWarning = validationWarnings.some(w => w.row === actualRowNumber && w.col === h);
+            if (cellHasWarning) {
+                td.style.color = 'var(--color-warning)';
+                td.style.fontWeight = '600';
+            }
+            
             td.textContent = cellVal;
             td.title = cellVal; // Display raw tooltip on hover
             tr.appendChild(td);
@@ -905,6 +1705,10 @@ function generatePreview(headers, rows) {
 
     // Show preview area
     previewSection.classList.remove('hidden');
+    
+    // Switch to first tab in preview area
+    const firstTabBtn = document.querySelector('.preview-tab-btn[data-prev-tab="prev-tab-table"]');
+    if (firstTabBtn) firstTabBtn.click();
 }
 
 // Live Search Filter on Preview Grid

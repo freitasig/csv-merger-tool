@@ -1040,6 +1040,95 @@ tr:hover {
 }
 
 /* ==========================================================================
+   Preview Sub-Tabs & Quality Layout
+   ========================================================================== */
+.preview-tabs {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.preview-tab-btn {
+    background-color: var(--input-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    font-family: var(--font-heading);
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all var(--transition-fast);
+}
+
+.preview-tab-btn:hover {
+    color: var(--text-main);
+    border-color: var(--border-hover);
+}
+
+.preview-tab-btn.active {
+    background-color: var(--primary-light);
+    color: var(--primary);
+    border-color: var(--primary);
+}
+
+.preview-tab-content {
+    display: none;
+    margin-top: 1rem;
+}
+
+.preview-tab-content.active {
+    display: block;
+    animation: fadeIn var(--transition-fast);
+}
+
+.preview-sub-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+/* Quality reports */
+.quality-summary-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+@media (max-width: 768px) {
+    .quality-summary-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.quality-box-card {
+    background-color: var(--input-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.quality-box-card h3 {
+    font-family: var(--font-heading);
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.quality-box-card h3 i {
+    width: 1.2rem;
+    height: 1.2rem;
+}
+
+/* ==========================================================================
    Footer Component
    ========================================================================== */
 .app-footer-info {
